@@ -1,0 +1,26 @@
+# Polymind model registry (ARCHITECTURE.md §4.1).
+# Declarative catalog of locally-hosted models with per-task capability scores.
+models:
+  qwen2.5-7b:
+    engine: ollama
+    ctx: 32768
+    supports_tools: true
+    scores: { chat: 8, code: 8, math: 7, reasoning: 7 }
+  deepseek-coder-6.7b:
+    engine: ollama
+    ctx: 16384
+    supports_tools: false
+    scores: { chat: 5, code: 9, math: 6, reasoning: 6 }
+  qwen2.5-math-7b:
+    engine: ollama
+    ctx: 8192
+    supports_tools: false
+    scores: { chat: 4, code: 5, math: 9, reasoning: 8 }
+  gemma2-9b:
+    engine: ollama
+    ctx: 8192
+    supports_tools: false
+    scores: { chat: 9, code: 6, math: 5, reasoning: 7 }
+  nomic-embed:
+    engine: ollama
+    role: embed

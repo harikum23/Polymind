@@ -1,0 +1,69 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: polymind
+  threads:
+    virtual:
+      enabled: true
+  # Step 1 ships an in-memory H2 datasource so the app boots without Postgres.
+  # Step 5 (knowledge / pgvector) switches the default profile to Postgres.
+  datasource:
+    url: jdbc:h2:mem:polymind;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+# ---- springdoc / Swagger UI ----
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+
+# ---- actuator / observability ----
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics, modulith
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: polymind
+
+# ---- Polymind ----
+polymind:
+  registry:
+    location: classpath:models.yaml
+  inference:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      connect-timeout-ms: 5000
+      request-timeout-ms: 600000
+  routing:
+    default-model: auto
+  search:
+    provider: searxng
+    searxng:
+      base-url: ${SEARXNG_BASE_URL:http://localhost:8888}
+    cache-ttl-seconds: 3600
+    daily-quota-per-key: 200
+  knowledge:
+    enabled: false
+    embed-model: nomic-embed
+    top-k: 5
+    context-token-budget: 2000
+  agent:
+    max-steps: 6

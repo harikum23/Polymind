@@ -1,0 +1,94 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.5'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.polymind'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    set('springModulithVersion', '1.3.7')
+    set('resilience4jVersion', '2.2.0')
+    set('bucket4jVersion', '8.14.0')
+}
+
+dependencies {
+    // --- Web / core ---
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // --- Spring Modulith ---
+    implementation 'org.springframework.modulith:spring-modulith-starter-core'
+    implementation 'org.springframework.modulith:spring-modulith-starter-jpa'
+    implementation 'org.springframework.modulith:spring-modulith-actuator'
+    runtimeOnly 'org.springframework.modulith:spring-modulith-observability'
+
+    // --- API docs (springdoc / Swagger UI) ---
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
+    // --- Resilience4j (Spring Boot 3) ---
+    implementation "io.github.resilience4j:resilience4j-spring-boot3:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-circuitbreaker:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-retry:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-bulkhead:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-timelimiter:${resilience4jVersion}"
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+    // --- Rate limit / quota ---
+    implementation "com.bucket4j:bucket4j_jdk17-core:${bucket4jVersion}"
+
+    // --- Persistence: Postgres + pgvector ---
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'com.pgvector:pgvector:0.1.6'
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'com.h2database:h2'
+
+    // --- Observability ---
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+
+    // --- Config / YAML ---
+    implementation 'org.yaml:snakeyaml'
+
+    // --- Lombok (optional convenience) ---
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // --- Test ---
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.modulith:spring-modulith-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    jvmArgs '-XX:+UseZGC', '-XX:+ZGenerational'
+}
+
+bootRun {
+    jvmArgs = ['-XX:+UseZGC', '-XX:+ZGenerational', '-Dspring.threads.virtual.enabled=true']
+}
+
+tasks.named('bootJar') {
+    archiveFileName = 'polymind.jar'
+}
