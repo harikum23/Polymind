@@ -1,0 +1,98 @@
+# Polymind deployment topology (ARCHITECTURE.md §11.3):
+#   Internet --HTTPS--> caddy (TLS) --> polymind (:8090) --> ollama (host) + searxng
+#   optional: redis (compose profile "scale")
+#
+# Always on: polymind + caddy + searxng (+ host ollama via host.docker.internal).
+# Run: docker compose up -d
+# With Redis: docker compose --profile scale up -d
+# Knowledge layer (pgvector): docker compose --profile knowledge up -d  (sets postgres profile)
+
+services:
+  polymind:
+    build: .
+    image: polymind:0.1.0
+    container_name: polymind
+    restart: unless-stopped
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      SEARXNG_BASE_URL: http://searxng:8080
+      POLYMIND_AUTH_ENABLED: ${POLYMIND_AUTH_ENABLED:-true}
+      POLYMIND_ADMIN_KEY: ${POLYMIND_ADMIN_KEY:-pmk-admin-dev}
+      # Uncomment to enable the knowledge layer against Postgres:
+      # SPRING_PROFILES_ACTIVE: postgres
+      # POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
+    ports:
+      - "8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - searxng
+    networks:
+      - polymind-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: polymind-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - polymind
+    networks:
+      - polymind-net
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: polymind-searxng
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8888/
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    ports:
+      - "8888:8080"
+    networks:
+      - polymind-net
+
+  # Optional: Postgres + pgvector for the knowledge layer.
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: polymind-postgres
+    profiles: ["knowledge"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: polymind
+      POSTGRES_USER: polymind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-polymind}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - polymind-net
+
+  # Optional: Redis for shared cache/quota/rate-limit across replicas (profile "scale").
+  redis:
+    image: redis:7-alpine
+    container_name: polymind-redis
+    profiles: ["scale"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - polymind-net
+
+networks:
+  polymind-net:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
+  pg-data:

@@ -1,0 +1,31 @@
+# Caddy TLS reverse proxy in front of Polymind (ARCHITECTURE.md §11).
+# Set POLYMIND_DOMAIN for automatic Let's Encrypt certs in production:
+#   POLYMIND_DOMAIN=polymind.example.com docker compose up -d
+#
+# Local default: HTTPS on :8443 with Caddy's internal CA (self-signed, trusted locally).
+
+{$POLYMIND_DOMAIN:localhost}:8443 {
+	# Use Caddy's internal CA locally; remove this line in production to get Let's Encrypt certs.
+	tls internal
+
+	encode gzip zstd
+
+	# Stream Server-Sent Events without buffering so token deltas arrive promptly.
+	reverse_proxy polymind:8090 {
+		flush_interval -1
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+	}
+}
+
+# Production HTTP->HTTPS redirect (only meaningful when a real domain is set).
+http://{$POLYMIND_DOMAIN:localhost} {
+	redir https://{host}{uri} permanent
+}
