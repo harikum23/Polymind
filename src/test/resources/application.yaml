@@ -1,0 +1,8 @@
+# Test profile: disable auth/governance/admission so context + slice tests run without keys.
+polymind:
+  tenancy:
+    auth-enabled: false
+  governance:
+    enabled: false
+  admission:
+    enabled: false

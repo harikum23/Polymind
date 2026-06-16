@@ -1,11 +1,13 @@
 package com.polymind.routing;
 
+import com.polymind.admission.AdmissionControl;
 import com.polymind.inference.ChatChunk;
 import com.polymind.inference.ChatRequest;
 import com.polymind.inference.ChatResult;
 import com.polymind.inference.EmbeddingRequest;
 import com.polymind.inference.EmbeddingResult;
-import com.polymind.inference.EngineRegistry;
+import com.polymind.observability.RoutingMetrics;
+import com.polymind.resilience.ResilientInferenceGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -15,9 +17,9 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Routing-aware orchestrator (step 3). Resolves the {@code model} control knob through
- * {@link ModelRouter}, then dispatches to the chosen engine via {@link EngineRegistry}. Registered
- * as {@code routingChatOrchestrator}, which deactivates the step-2 passthrough bean.
+ * Routing-aware orchestrator. Resolves the {@code model} control knob via {@link ModelRouter}, then
+ * dispatches through {@link AdmissionControl} (concurrency + backpressure) and
+ * {@link ResilientInferenceGateway} (circuit breaker / retry / bulkhead). Records routing metrics.
  */
 @Component("routingChatOrchestrator")
 public class RoutingChatOrchestrator implements ChatOrchestrator {
@@ -26,26 +28,33 @@ public class RoutingChatOrchestrator implements ChatOrchestrator {
 
     private final ModelRouter router;
     private final ModelRegistry registry;
-    private final EngineRegistry engines;
+    private final ResilientInferenceGateway gateway;
+    private final AdmissionControl admission;
+    private final RoutingMetrics metrics;
 
-    public RoutingChatOrchestrator(ModelRouter router, ModelRegistry registry, EngineRegistry engines) {
+    public RoutingChatOrchestrator(ModelRouter router, ModelRegistry registry,
+                                   ResilientInferenceGateway gateway, AdmissionControl admission,
+                                   RoutingMetrics metrics) {
         this.router = router;
         this.registry = registry;
-        this.engines = engines;
+        this.gateway = gateway;
+        this.admission = admission;
+        this.metrics = metrics;
     }
 
     @Override
     public String streamChat(ChatRequest request, Consumer<ChatChunk> onChunk) {
         RouteDecision decision = decide(request);
-        engines.require(decision.engine()).streamChat(request.withModel(decision.modelId()), onChunk);
+        admission.runStreaming(AdmissionControl.Priority.NORMAL, () ->
+                gateway.streamChat(decision.engine(), request.withModel(decision.modelId()), onChunk));
         return decision.modelId();
     }
 
     @Override
     public ChatOutcome chat(ChatRequest request) {
         RouteDecision decision = decide(request);
-        ChatResult result = engines.require(decision.engine())
-                .chat(request.withModel(decision.modelId()));
+        ChatResult result = admission.submit(AdmissionControl.Priority.NORMAL, () ->
+                gateway.chat(decision.engine(), request.withModel(decision.modelId())));
         return new ChatOutcome(decision.modelId(), result.content(), result.finishReason(), result.usage());
     }
 
@@ -58,7 +67,8 @@ public class RoutingChatOrchestrator implements ChatOrchestrator {
                     .orElseThrow(() -> new IllegalStateException("No embedding model registered"));
         }
         String engine = registry.find(model).map(ModelSpec::engine).orElse("ollama");
-        return engines.require(engine).embed(new EmbeddingRequest(model, request.input()));
+        EmbeddingRequest resolved = new EmbeddingRequest(model, request.input());
+        return admission.submit(AdmissionControl.Priority.LOW, () -> gateway.embed(engine, resolved));
     }
 
     @SuppressWarnings("unchecked")
@@ -74,6 +84,7 @@ public class RoutingChatOrchestrator implements ChatOrchestrator {
                 .toList();
         RouteDecision decision = router.route(
                 new RouteQuery(request.model(), taskHint, userMessages, needsTools, force));
+        metrics.recordRoute(decision.modelId(), decision.category().key(), decision.reason());
         log.info("model='{}' -> {} (engine={}, reason={})",
                 request.model(), decision.modelId(), decision.engine(), decision.reason());
         return decision;

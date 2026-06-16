@@ -1,5 +1,6 @@
 package com.polymind.web;
 
+import com.polymind.admission.BackpressureException;
 import com.polymind.inference.EngineException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> badRequest(IllegalArgumentException e) {
         return error(HttpStatus.BAD_REQUEST, "invalid_request_error", e.getMessage());
+    }
+
+    @ExceptionHandler(BackpressureException.class)
+    public ResponseEntity<Map<String, Object>> backpressure(BackpressureException e) {
+        return error(HttpStatus.TOO_MANY_REQUESTS, "overloaded", e.getMessage());
     }
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String type, String message) {

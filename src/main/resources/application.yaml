@@ -67,3 +67,18 @@ polymind:
     context-token-budget: 2000
   agent:
     max-steps: 6
+  tenancy:
+    auth-enabled: ${POLYMIND_AUTH_ENABLED:true}
+    admin-key: ${POLYMIND_ADMIN_KEY:pmk-admin-dev}
+  governance:
+    enabled: true
+    requests-per-minute: 120
+    burst: 40
+    daily-quota: 10000
+  admission:
+    enabled: true
+    max-concurrency: 256
+    queue-capacity: 1000
+    acquire-timeout-ms: 10000
+  resilience:
+    enabled: true
