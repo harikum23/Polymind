@@ -2,6 +2,7 @@ package com.polymind.web;
 
 import com.polymind.admission.BackpressureException;
 import com.polymind.inference.EngineException;
+import com.polymind.tools.WebSearchException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,6 +27,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(BackpressureException.class)
     public ResponseEntity<Map<String, Object>> backpressure(BackpressureException e) {
         return error(HttpStatus.TOO_MANY_REQUESTS, "overloaded", e.getMessage());
+    }
+
+    @ExceptionHandler(WebSearchException.class)
+    public ResponseEntity<Map<String, Object>> webSearch(WebSearchException e) {
+        return error(HttpStatus.BAD_GATEWAY, "web_search_error", e.getMessage());
     }
 
     private ResponseEntity<Map<String, Object>> error(HttpStatus status, String type, String message) {

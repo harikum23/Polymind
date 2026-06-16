@@ -7,9 +7,13 @@ import com.polymind.inference.ChatRequest;
 import com.polymind.inference.ChatResult;
 import com.polymind.inference.EmbeddingRequest;
 import com.polymind.inference.EmbeddingResult;
+import com.polymind.agent.AgentLoop;
+import com.polymind.agent.AgentResult;
 import com.polymind.knowledge.KnowledgeService;
 import com.polymind.observability.RoutingMetrics;
 import com.polymind.resilience.ResilientInferenceGateway;
+import com.polymind.tools.SearchResult;
+import com.polymind.tools.WebSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -34,22 +38,35 @@ public class RoutingChatOrchestrator implements ChatOrchestrator {
     private final AdmissionControl admission;
     private final RoutingMetrics metrics;
     private final KnowledgeService knowledge;
+    private final WebSearchService webSearch;
+    private final AgentLoop agentLoop;
 
     public RoutingChatOrchestrator(ModelRouter router, ModelRegistry registry,
                                    ResilientInferenceGateway gateway, AdmissionControl admission,
-                                   RoutingMetrics metrics, KnowledgeService knowledge) {
+                                   RoutingMetrics metrics, KnowledgeService knowledge,
+                                   WebSearchService webSearch, AgentLoop agentLoop) {
         this.router = router;
         this.registry = registry;
         this.gateway = gateway;
         this.admission = admission;
         this.metrics = metrics;
         this.knowledge = knowledge;
+        this.webSearch = webSearch;
+        this.agentLoop = agentLoop;
     }
 
     @Override
     public String streamChat(ChatRequest request, Consumer<ChatChunk> onChunk) {
         RouteDecision decision = decide(request);
-        ChatRequest finalReq = applyKnowledge(request).withModel(decision.modelId());
+        if (wantsAgent(request)) {
+            // Agent loop is inherently multi-step; emit its final answer as a single delta + terminal.
+            AgentResult agent = admission.submit(AdmissionControl.Priority.NORMAL, () ->
+                    agentLoop.run(decision.engine(), decision.modelId(), request.messages(), keyId()));
+            onChunk.accept(ChatChunk.delta(agent.content()));
+            onChunk.accept(ChatChunk.terminal("stop", agent.usage()));
+            return decision.modelId();
+        }
+        ChatRequest finalReq = augment(request).withModel(decision.modelId());
         admission.runStreaming(AdmissionControl.Priority.NORMAL, () ->
                 gateway.streamChat(decision.engine(), finalReq, onChunk));
         return decision.modelId();
@@ -58,10 +75,74 @@ public class RoutingChatOrchestrator implements ChatOrchestrator {
     @Override
     public ChatOutcome chat(ChatRequest request) {
         RouteDecision decision = decide(request);
-        ChatRequest finalReq = applyKnowledge(request).withModel(decision.modelId());
+        if (wantsAgent(request)) {
+            AgentResult agent = admission.submit(AdmissionControl.Priority.NORMAL, () ->
+                    agentLoop.run(decision.engine(), decision.modelId(), request.messages(), keyId()));
+            return new ChatOutcome(decision.modelId(), agent.content(), "stop", agent.usage());
+        }
+        ChatRequest finalReq = augment(request).withModel(decision.modelId());
         ChatResult result = admission.submit(AdmissionControl.Priority.NORMAL, () ->
                 gateway.chat(decision.engine(), finalReq));
         return new ChatOutcome(decision.modelId(), result.content(), result.finishReason(), result.usage());
+    }
+
+    /** Apply optional augmentations in order: knowledge pack, then per-request web search (§8.2 #1). */
+    private ChatRequest augment(ChatRequest request) {
+        return applyWebSearch(applyKnowledge(request));
+    }
+
+    private boolean wantsAgent(ChatRequest request) {
+        Map<String, Object> m = request.extraOptions() == null ? Map.of() : request.extraOptions();
+        return isTrue(m.get("agent")) || (request.tools() != null && !request.tools().isEmpty());
+    }
+
+    /** §8.2 access pattern #1: metadata.web_search:true -> search latest user msg, inject results. */
+    private ChatRequest applyWebSearch(ChatRequest request) {
+        Map<String, Object> m = request.extraOptions() == null ? Map.of() : request.extraOptions();
+        if (!isTrue(m.get("web_search"))) {
+            return request;
+        }
+        String query = latestUser(request);
+        if (query.isBlank()) {
+            return request;
+        }
+        try {
+            SearchResult search = webSearch.searchForKey(keyId(), query, null);
+            if (search.text().isBlank()) {
+                return request;
+            }
+            List<ChatMessage> augmented = new java.util.ArrayList<>();
+            augmented.add(ChatMessage.of("system",
+                    "Use the following live web search results to answer.\n\n" + search.text()));
+            augmented.addAll(request.messages());
+            return request.withMessages(augmented);
+        } catch (Exception e) {
+            log.warn("web_search injection failed, proceeding without: {}", e.getMessage());
+            return request;
+        }
+    }
+
+    private String latestUser(ChatRequest request) {
+        for (int i = request.messages().size() - 1; i >= 0; i--) {
+            ChatMessage msg = request.messages().get(i);
+            if ("user".equalsIgnoreCase(msg.role()) && msg.content() != null) {
+                return msg.content();
+            }
+        }
+        return "";
+    }
+
+    private boolean isTrue(Object o) {
+        return Boolean.TRUE.equals(o) || "true".equalsIgnoreCase(String.valueOf(o));
+    }
+
+    private String keyId() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof com.polymind.tenancy.ApiKey key) {
+            return key.id();
+        }
+        return "anonymous";
     }
 
     /** Step 5: if metadata.knowledge_pack is set and the layer is active, inject retrieved context. */
