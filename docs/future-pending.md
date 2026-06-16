@@ -99,3 +99,16 @@ Status legend: **DONE** = shipped, **REMAINING** = deferred.
 - **REMAINING:** Trigger reload without restart (file-watch or an admin endpoint).
 - **How later:** Add `POST /v1/admin/registry/reload` (admin-only) or a `WatchService` on the
   registry file that calls `reload()`.
+
+### 11. Live engine model-availability filtering in routing (§4.2 "best-scoring **available** model")
+- **DONE:** Score-based selection, capability guards (tools/ctx), forced-id ▸ category ▸ auto precedence.
+- **REMAINING:** The router does **not** check whether a chosen model is actually loaded in the engine.
+  `auto`/category routing picks the top-scored registry entry (e.g. `gemma2-9b`) even if that model
+  isn't pulled in Ollama, producing a 502 (`Ollama chat failed: HTTP 404`). Forced-id works because
+  the caller names a model that exists. **Surfaced during the live docker smoke test (2026-06-16).**
+- **How later:** Add an `Engine.availableModels()` probe (Ollama `GET /api/tags`), cache it with a
+  short TTL, and have `ModelRouter` filter candidates to available models before scoring (falling
+  back to next-best). Also map registry ids → engine model tags (today the registry id is sent to
+  Ollama verbatim, so ids must match the pulled tag or have an `ollama cp` alias — e.g. registry
+  `qwen2.5-7b` vs pulled `qwen2.5:7b-instruct-q4_K_M`). Consider an optional `engine_model:` field
+  on `ModelSpec` for an explicit id→tag mapping.
