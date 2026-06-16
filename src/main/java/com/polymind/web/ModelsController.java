@@ -1,11 +1,14 @@
 package com.polymind.web;
 
+import com.polymind.routing.ModelCatalog;
 import com.polymind.web.dto.ModelsResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /** OpenAI-compatible {@code GET /v1/models}: concrete models and category aliases. */
 @RestController
@@ -22,6 +25,10 @@ public class ModelsController {
     @GetMapping("/models")
     @Operation(summary = "List available models and category aliases")
     public ModelsResponse list() {
-        return new ModelsResponse("list", catalog.list());
+        List<ModelsResponse.ModelEntry> data = catalog.list().stream()
+                .map(card -> new ModelsResponse.ModelEntry(
+                        card.id(), "model", "polymind:" + card.kind(), "polymind", card.capabilities()))
+                .toList();
+        return new ModelsResponse("list", data);
     }
 }
