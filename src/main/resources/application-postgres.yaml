@@ -1,0 +1,15 @@
+# Activate with SPRING_PROFILES_ACTIVE=postgres to enable the knowledge layer (pgvector).
+spring:
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/polymind}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:polymind}
+    password: ${POSTGRES_PASSWORD:polymind}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+polymind:
+  knowledge:
+    enabled: true
