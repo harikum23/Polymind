@@ -11,7 +11,9 @@ import java.util.concurrent.Executors;
 
 /** Enables config properties and a virtual-thread executor for background indexing. */
 @Configuration
-@EnableAsync
+// proxyTargetClass=true so async AOP uses CGLIB; otherwise JDK proxies are forced
+// app-wide and the servlet ApiKeyAuthFilter (a Filter) can't be injected by its concrete type.
+@EnableAsync(proxyTargetClass = true)
 @EnableConfigurationProperties(KnowledgeProperties.class)
 public class KnowledgeConfig {
 

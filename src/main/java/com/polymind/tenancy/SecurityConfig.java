@@ -1,5 +1,7 @@
 package com.polymind.tenancy;
 
+import jakarta.servlet.Filter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +30,9 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
-                                           ApiKeyAuthFilter apiKeyAuthFilter,
+                                           // Inject by the Filter interface (not the concrete type): the bean may be
+                                           // wrapped in a JDK dynamic proxy by AOP, which prevents concrete-type injection.
+                                           @Qualifier("apiKeyAuthFilter") Filter apiKeyAuthFilter,
                                            TenancyProperties props) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
