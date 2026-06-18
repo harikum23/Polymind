@@ -11,7 +11,7 @@
 	encode gzip zstd
 
 	# Stream Server-Sent Events without buffering so token deltas arrive promptly.
-	reverse_proxy polymind:8090 {
+	reverse_proxy polymind:9090 {
 		flush_interval -1
 		transport http {
 			read_timeout 600s

@@ -178,6 +178,9 @@ public class OllamaEngine implements Engine {
             body.set("tools", mapper.valueToTree(request.tools()));
         }
         ObjectNode options = body.putObject("options");
+        if (props.getNumCtx() > 0) {
+            options.put("num_ctx", props.getNumCtx());
+        }
         if (request.temperature() != null) {
             options.put("temperature", request.temperature());
         }

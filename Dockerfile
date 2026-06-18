@@ -16,9 +16,9 @@ WORKDIR /app
 RUN groupadd -r polymind && useradd -r -g polymind polymind
 COPY --from=build /app/build/libs/polymind.jar ./polymind.jar
 USER polymind
-EXPOSE 8090
+EXPOSE 9090
 # ZGC (generational) for low-pause streaming; virtual threads for concurrency.
 ENV JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational -Dspring.threads.virtual.enabled=true"
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:8090/v1/health || exit 1
+  CMD wget -qO- http://localhost:9090/v1/health || exit 1
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar polymind.jar"]

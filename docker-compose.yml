@@ -22,7 +22,7 @@ services:
       # SPRING_PROFILES_ACTIVE: postgres
       # POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
     ports:
-      - "8090:8090"
+      - "9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -56,7 +56,7 @@ services:
     volumes:
       - ./searxng:/etc/searxng:rw
     ports:
-      - "8888:8080"
+      - "8889:8080"
     networks:
       - polymind-net
 
