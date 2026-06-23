@@ -29,10 +29,24 @@ public class ApiKeyService {
     }
 
     @PostConstruct
-    void seedAdmin() {
+    void seed() {
         ApiKey admin = new ApiKey(UUID.randomUUID().toString(), props.getAdminKey(), "bootstrap-admin",
                 true, true, Set.of(), Instant.now());
         bySecret.put(admin.secret(), admin);
+
+        // Static service keys re-seeded from config on every startup, so external integrations
+        // (e.g. TradeEngine) keep a stable key across restarts of the in-process store.
+        for (TenancyProperties.StaticKey sk : props.getStaticKeys()) {
+            String secret = sk.getSecret();
+            if (secret == null || secret.isBlank()) {
+                continue;
+            }
+            ApiKey key = new ApiKey(UUID.randomUUID().toString(), secret.trim(), sk.getOwner(),
+                    sk.isAdmin(), true,
+                    sk.getAllowedModels() == null ? Set.of() : Set.copyOf(sk.getAllowedModels()),
+                    Instant.now());
+            bySecret.put(key.secret(), key);
+        }
     }
 
     public Optional<ApiKey> authenticate(String secret) {

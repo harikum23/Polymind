@@ -70,6 +70,12 @@ polymind:
   tenancy:
     auth-enabled: ${POLYMIND_AUTH_ENABLED:true}
     admin-key: ${POLYMIND_ADMIN_KEY:pmk-admin-dev}
+    # Stable pre-shared keys for external services; re-seeded on every restart.
+    # Set POLYMIND_SERVICE_KEY to the key external clients (e.g. TradeEngine) use.
+    static-keys:
+      - secret: ${POLYMIND_SERVICE_KEY:}
+        owner: external-services
+        admin: false
   governance:
     enabled: true
     requests-per-minute: 120

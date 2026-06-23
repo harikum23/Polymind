@@ -18,6 +18,8 @@ services:
       SEARXNG_BASE_URL: http://searxng:8080
       POLYMIND_AUTH_ENABLED: ${POLYMIND_AUTH_ENABLED:-true}
       POLYMIND_ADMIN_KEY: ${POLYMIND_ADMIN_KEY:-pmk-admin-dev}
+      # Stable pre-shared key for external services (e.g. TradeEngine); survives restarts.
+      POLYMIND_SERVICE_KEY: ${POLYMIND_SERVICE_KEY:-}
       # Uncomment to enable the knowledge layer against Postgres:
       # SPRING_PROFILES_ACTIVE: postgres
       # POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
