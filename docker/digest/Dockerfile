@@ -11,6 +11,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY server.js ./server.js
+COPY openapi.yaml ./openapi.yaml
 
 # Persist Claude CLI state and digest data on a volume; run as the non-root `node` user so the
 # CLI's --dangerously-skip-permissions is accepted (it refuses to run as root).

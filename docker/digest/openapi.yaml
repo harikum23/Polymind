@@ -1,0 +1,168 @@
+openapi: 3.0.3
+info:
+  title: Polymind Trade-Digest Sidecar API
+  version: 0.1.0
+  description: |
+    Nightly trade-research digest generator + ad-hoc Claude-CLI research endpoint.
+
+    Runs the Claude CLI on the operator's Claude Max subscription ($0 marginal cost).
+    Digests are generated on an in-container schedule (default 06:30 IST india-open focus,
+    18:45 IST us-open focus) and reindexed into Polymind's `trade-engine` knowledge pack,
+    which Polymind's gateway-compat layer injects into TradeEngine's /v1/generate and
+    /v1/agent calls automatically.
+
+    **Model policy (hard-enforced):** `haiku` (default) or `sonnet` only. Opus and all other
+    tiers are rejected with HTTP 400.
+servers:
+  - url: http://localhost:9091
+    description: host (Mac)
+  - url: http://host.docker.internal:9091
+    description: from other Docker networks (e.g. TradeEngine containers)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Required on /ask and /digest/run only when DIGEST_API_KEY is configured on the
+        sidecar; otherwise the endpoints are open (dev mode).
+  schemas:
+    DigestResult:
+      type: object
+      properties:
+        at: { type: string, format: date-time, nullable: true, description: when the last digest finished }
+        ok: { type: boolean, nullable: true, description: whether the last digest succeeded }
+        focus:
+          type: string
+          nullable: true
+          enum: [india-open, us-open]
+          description: session focus of the last digest run
+        sections: { type: integer, description: markdown sections parsed from the CLI output }
+        chunks: { type: integer, nullable: true, description: vector chunks stored by the reindex }
+        error: { type: string, nullable: true, description: failure reason when ok=false }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+paths:
+  /health:
+    get:
+      summary: Service status, model policy, schedule, and last digest result
+      operationId: health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  hasClaudeToken:
+                    type: boolean
+                    description: false ⇒ /ask and /digest/run will return 503 until CLAUDE_CODE_OAUTH_TOKEN is set
+                  pack: { type: string, example: trade-engine }
+                  allowedModels:
+                    type: array
+                    items: { type: string }
+                    example: [haiku, sonnet]
+                  defaultModel: { type: string, example: haiku }
+                  schedule: { type: string, example: "06:30(india-open), 18:45(us-open) Asia/Kolkata" }
+                  lastDigest: { $ref: "#/components/schemas/DigestResult" }
+  /digest/run:
+    post:
+      summary: Generate a digest now and reindex it into the knowledge pack
+      description: >
+        Synchronous — blocks until the Claude CLI finishes (typically 1–5 minutes) and the
+        reindex completes. Replaces the pack's previous contents wholesale.
+      operationId: runDigest
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  enum: [haiku, sonnet]
+                  default: haiku
+                focus:
+                  type: string
+                  enum: [india-open, us-open]
+                  default: india-open
+                  description: session emphasis for this run
+      responses:
+        "200":
+          description: digest generated and indexed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DigestResult" }
+        "400": { description: "disallowed model (policy: haiku/sonnet only)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: missing/invalid bearer token (when DIGEST_API_KEY set), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Claude CLI exited non-zero, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: no Claude credentials in container, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "504": { description: Claude CLI timed out (15 min), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /ask:
+    post:
+      summary: Ad-hoc Claude-CLI research question (live web search)
+      description: >
+        For live questions the digest doesn't already answer. Runs on the operator's Claude
+        subscription. TradeEngine calls this via gateway_research() in src/gateway/client.py
+        (fail-soft — treats any error as "use fallback").
+      operationId: ask
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, description: the research question }
+                model:
+                  type: string
+                  enum: [haiku, sonnet]
+                  default: haiku
+                index:
+                  type: boolean
+                  default: false
+                  description: also persist the answer into the knowledge pack
+                pack:
+                  type: string
+                  description: target pack when index=true (default = sidecar's configured pack)
+                source:
+                  type: string
+                  description: source label for the indexed document (default ask-<timestamp>.md)
+      responses:
+        "200":
+          description: answer produced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model: { type: string, example: haiku }
+                  ms: { type: integer, description: wall-clock latency in milliseconds }
+                  answer: { type: string }
+                  indexed:
+                    type: object
+                    nullable: true
+                    description: reindex result when index=true (or {error} if indexing failed)
+        "400": { description: missing question or disallowed model, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: missing/invalid bearer token (when DIGEST_API_KEY set), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Claude CLI exited non-zero, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: no Claude credentials in container, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "504": { description: Claude CLI timed out (5 min), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /openapi.yaml:
+    get:
+      summary: This specification
+      operationId: spec
+      responses:
+        "200":
+          description: OpenAPI 3 spec (YAML)
+          content:
+            text/yaml:
+              schema: { type: string }

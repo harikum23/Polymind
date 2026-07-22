@@ -13,6 +13,8 @@
  */
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = parseInt(process.env.PORT || '9091', 10);
@@ -276,7 +278,16 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { model, ms, answer, indexed });
     }
 
-    return send(res, 404, { error: 'not found', routes: ['GET /health', 'POST /digest/run', 'POST /ask'] });
+    if (req.method === 'GET' && req.url === '/openapi.yaml') {
+      // Self-documenting: the machine-readable contract ships with the service.
+      res.writeHead(200, { 'Content-Type': 'text/yaml' });
+      return res.end(fs.readFileSync(path.join(__dirname, 'openapi.yaml')));
+    }
+
+    return send(res, 404, {
+      error: 'not found',
+      routes: ['GET /health', 'GET /openapi.yaml', 'POST /digest/run', 'POST /ask'],
+    });
   } catch (e) {
     log(`request error: ${e.message}`);
     return send(res, e.statusCode || 500, { error: e.message });

@@ -157,7 +157,7 @@ Two mechanisms:
 | `DIGEST_MODEL` | `haiku` | digest model (`haiku`\|`sonnet`) |
 | `DIGEST_SCHEDULE` | `06:30,18:45` | comma-separated IST run times. Slots before 12:00 run with `india-open` focus (post-US-close, pre-NSE-open); later slots with `us-open` focus (post-NSE-close, pre-US-open: pre-market movers, US earnings/macro due, India wrap). Both sessions get fresh context. |
 | `POLYMIND_COMPAT_KNOWLEDGE_PACK` | `trade-engine` | default pack for compat calls (`application-postgres.yaml`) |
-| `POLYMIND_KNOWLEDGE_MIN_SCORE` | `0.35` | relevance gate threshold |
+| `POLYMIND_KNOWLEDGE_MIN_SCORE` | `0.55` (compose; code default 0.35) | relevance gate threshold — 0.55 verified 2026-07-22: blocks off-topic (JSON-only) calls from pulling digest context while research calls stay augmented |
 
 ## 9. Verified during deployment
 

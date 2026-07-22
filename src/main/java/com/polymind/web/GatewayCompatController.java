@@ -11,6 +11,7 @@ import com.polymind.tools.SearchResult;
 import com.polymind.tools.WebSearchService;
 import com.polymind.web.dto.OpenAiChatRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,7 +94,11 @@ public class GatewayCompatController {
 
     @PostMapping(value = "/generate", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Legacy generate (gemma-gateway compat)",
-            description = "Non-streaming chat. Returns the answer under both 'content' and 'text'.")
+            description = "Non-streaming chat. Returns the answer under both 'content' and 'text'. "
+                    + "Optional 'metadata' (knowledge_pack, web_search, task, force) is forwarded to "
+                    + "the orchestrator; when polymind.gateway-compat.knowledge-pack is configured, "
+                    + "that pack is applied by default and retrieved context is injected whenever it "
+                    + "clears the relevance gate (polymind.knowledge.min-score).")
     public GenerateResponse generate(@RequestBody GenerateRequest req) {
         String model = blankToNull(req.model()) != null ? req.model() : defaultModel;
         ChatRequest engineReq = new ChatRequest(
@@ -128,7 +133,10 @@ public class GatewayCompatController {
 
     @PostMapping(value = "/agent", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Legacy agent (gemma-gateway compat)",
-            description = "Single-step, web-search-augmented answer. Returns content, steps, sources.")
+            description = "Single-step, web-search-augmented answer. Returns content, steps, sources. "
+                    + "Optional 'metadata' behaves as on /v1/generate (default knowledge pack + "
+                    + "relevance-gated context injection), stacking digest context on top of the "
+                    + "live web-search results.")
     public AgentResponse agent(@RequestBody AgentRequest req) {
         String query = lastUserMessage(req.messages());
         Agent opts = req.agent() == null ? new Agent(null, null, null, null) : req.agent();
@@ -218,6 +226,10 @@ public class GatewayCompatController {
             String model,
             // Optional passthrough (knowledge_pack, web_search, task, force); merged with the
             // server-side default pack. Absent in the original gemma-gateway shape — additive.
+            @Schema(description = "Optional Polymind extensions: knowledge_pack (RAG pack name; "
+                    + "overrides the configured default), web_search (true = inject live results), "
+                    + "task (chat|code|math|reasoning hint), force (forbid fallback).",
+                    example = "{\"knowledge_pack\": \"trade-engine\"}")
             Map<String, Object> metadata) {}
 
     public record GenerateResponse(
@@ -238,6 +250,9 @@ public class GatewayCompatController {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentRequest(List<OpenAiChatRequest.Message> messages, Agent agent,
+                               @Schema(description = "Optional Polymind extensions — same semantics "
+                                       + "as on /v1/generate.",
+                                       example = "{\"knowledge_pack\": \"trade-engine\"}")
                                Map<String, Object> metadata) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
