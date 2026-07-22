@@ -1,5 +1,6 @@
 package com.polymind.inference;
 
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -25,4 +26,14 @@ public interface Engine {
 
     /** Cheap liveness probe used by health and resilience. */
     boolean isHealthy();
+
+    /**
+     * Model ids this engine can currently serve (ARCHITECTURE.md §4.2 "best-scoring <b>available</b>
+     * model"). Used by routing to avoid selecting a registered-but-not-pulled model. An empty set
+     * means "availability unknown" (e.g. engine unreachable) and callers MUST treat it as
+     * do-not-filter rather than nothing-available, so a transient outage never narrows routing.
+     */
+    default Set<String> availableModels() {
+        return Set.of();
+    }
 }

@@ -20,9 +20,9 @@ services:
       POLYMIND_ADMIN_KEY: ${POLYMIND_ADMIN_KEY:-pmk-admin-dev}
       # Stable pre-shared key for external services (e.g. TradeEngine); survives restarts.
       POLYMIND_SERVICE_KEY: ${POLYMIND_SERVICE_KEY:-}
-      # Uncomment to enable the knowledge layer against Postgres:
-      # SPRING_PROFILES_ACTIVE: postgres
-      # POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
+      # Knowledge layer (pgvector) — enabled:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
     ports:
       - "9090:9090"
     extra_hosts:
@@ -79,6 +79,35 @@ services:
     networks:
       - polymind-net
 
+  # Nightly trade-research digest + ad-hoc Claude-CLI research endpoint (docs/nightly-digest.md).
+  # Runs the digest on the user's Claude Max subscription ($0 marginal) and reindexes it into the
+  # `trade-engine` knowledge pack. Scheduler runs in-container (project policy: no host cron).
+  trade-digest:
+    build: ./docker/digest
+    image: polymind-trade-digest:0.1.0
+    container_name: polymind-trade-digest
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Kolkata
+      # From `claude setup-token` on the host (Max subscription). Blank => /ask & digest report 503.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      POLYMIND_URL: http://polymind:9090
+      POLYMIND_ADMIN_KEY: ${POLYMIND_ADMIN_KEY:-pmk-admin-dev}
+      DIGEST_PACK: trade-engine
+      DIGEST_MODEL: haiku            # policy: haiku|sonnet only; opus is rejected
+      # Two IST runs so both sessions get fresh context: 06:30 pre-NSE-open (india-open focus),
+      # 18:45 pre-US-open (us-open focus). Comma-separated HH:MM list.
+      DIGEST_SCHEDULE: "06:30,18:45"
+      DIGEST_API_KEY: ${DIGEST_API_KEY:-}   # if set, /ask & /digest/run require this Bearer token
+    ports:
+      - "9091:9091"                 # published so TradeEngine can reach it via host.docker.internal:9091
+    volumes:
+      - digest-data:/data
+    depends_on:
+      - polymind
+    networks:
+      - polymind-net
+
   # Optional: Redis for shared cache/quota/rate-limit across replicas (profile "scale").
   redis:
     image: redis:7-alpine
@@ -98,3 +127,4 @@ volumes:
   caddy-data:
   caddy-config:
   pg-data:
+  digest-data:

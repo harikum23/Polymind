@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,18 +53,40 @@ public class GatewayCompatController {
     private final String defaultModel;
     private final String defaultEmbedModel;
     private final int agentMaxTokens;
+    private final String defaultKnowledgePack;
 
     public GatewayCompatController(
             ChatOrchestrator orchestrator,
             WebSearchService webSearch,
             @Value("${polymind.gateway-compat.default-model:qwen2.5-7b}") String defaultModel,
             @Value("${polymind.gateway-compat.default-embed-model:nomic-embed}") String defaultEmbedModel,
-            @Value("${polymind.gateway-compat.agent-max-tokens:512}") int agentMaxTokens) {
+            @Value("${polymind.gateway-compat.agent-max-tokens:512}") int agentMaxTokens,
+            @Value("${polymind.gateway-compat.knowledge-pack:}") String defaultKnowledgePack) {
         this.orchestrator = orchestrator;
         this.webSearch = webSearch;
         this.defaultModel = defaultModel;
         this.defaultEmbedModel = defaultEmbedModel;
         this.agentMaxTokens = agentMaxTokens;
+        this.defaultKnowledgePack = defaultKnowledgePack;
+    }
+
+    /**
+     * Merge per-request {@code metadata} with the configured default knowledge pack. The legacy
+     * gemma-gateway wire shape has no metadata field, so this is how consumers like TradeEngine —
+     * which speak only {@code /v1/generate} and {@code /v1/agent} — pick up knowledge augmentation.
+     * When {@code polymind.gateway-compat.knowledge-pack} is set, every compat call gets that pack;
+     * the knowledge layer's relevance gate ({@code polymind.knowledge.min-score}) ensures only
+     * pertinent calls actually receive injected context. Per-request metadata overrides the default.
+     */
+    private Map<String, Object> buildExtraOptions(Map<String, Object> metadata) {
+        Map<String, Object> opts = new LinkedHashMap<>();
+        if (defaultKnowledgePack != null && !defaultKnowledgePack.isBlank()) {
+            opts.put("knowledge_pack", defaultKnowledgePack);
+        }
+        if (metadata != null) {
+            opts.putAll(metadata); // caller-supplied metadata wins over the server default
+        }
+        return opts.isEmpty() ? null : opts;
     }
 
     // ---- /v1/generate -----------------------------------------------------
@@ -81,7 +104,7 @@ public class GatewayCompatController {
                 req.maxTokens(),
                 Boolean.FALSE,
                 null,
-                null);
+                buildExtraOptions(req.metadata()));
         ChatOrchestrator.ChatOutcome out = orchestrator.chat(engineReq);
         int in = out.usage() == null ? 0 : out.usage().promptTokens();
         int outTok = out.usage() == null ? 0 : out.usage().completionTokens();
@@ -146,7 +169,8 @@ public class GatewayCompatController {
         messages.add(ChatMessage.of("user", userContent));
 
         ChatRequest engineReq = new ChatRequest(
-                defaultModel, messages, 0.2, null, agentMaxTokens, Boolean.FALSE, null, null);
+                defaultModel, messages, 0.2, null, agentMaxTokens, Boolean.FALSE, null,
+                buildExtraOptions(req.metadata()));
         ChatOrchestrator.ChatOutcome out = orchestrator.chat(engineReq);
         int in = out.usage() == null ? 0 : out.usage().promptTokens();
         int outTok = out.usage() == null ? 0 : out.usage().completionTokens();
@@ -191,7 +215,10 @@ public class GatewayCompatController {
             Boolean stream,
             Double temperature,
             @JsonProperty("top_p") Double topP,
-            String model) {}
+            String model,
+            // Optional passthrough (knowledge_pack, web_search, task, force); merged with the
+            // server-side default pack. Absent in the original gemma-gateway shape — additive.
+            Map<String, Object> metadata) {}
 
     public record GenerateResponse(
             String content,
@@ -210,7 +237,8 @@ public class GatewayCompatController {
             @JsonProperty("tokens_in") int tokensIn) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AgentRequest(List<OpenAiChatRequest.Message> messages, Agent agent) {}
+    public record AgentRequest(List<OpenAiChatRequest.Message> messages, Agent agent,
+                               Map<String, Object> metadata) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Agent(

@@ -27,6 +27,28 @@ public class PgVectorStore implements VectorStore {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Attach to an already-created {@code knowledge_chunk} table on read. Without this, a restart
+     * leaves {@code initialized=false} until the next write, so previously-indexed packs (which live
+     * in Postgres, not this process) would read back empty until the next reindex — blanking the
+     * knowledge layer on every Polymind restart.
+     */
+    private void attachExistingSchema() {
+        if (initialized) {
+            return;
+        }
+        try {
+            String table = jdbc.queryForObject(
+                    "SELECT to_regclass('public.knowledge_chunk')::text", String.class);
+            if (table != null) {
+                initialized = true;
+                log.info("Attached to existing knowledge_chunk table on startup");
+            }
+        } catch (Exception e) {
+            log.debug("knowledge_chunk existence probe failed: {}", e.getMessage());
+        }
+    }
+
     private synchronized void ensureSchema(int dimension) {
         if (initialized) {
             return;
@@ -50,6 +72,7 @@ public class PgVectorStore implements VectorStore {
 
     @Override
     public long count(String pack) {
+        attachExistingSchema();
         if (!initialized) {
             return 0;
         }
@@ -67,6 +90,7 @@ public class PgVectorStore implements VectorStore {
 
     @Override
     public void clearPack(String pack) {
+        attachExistingSchema();
         if (initialized) {
             jdbc.update("DELETE FROM knowledge_chunk WHERE pack = ?", pack);
         }
@@ -74,6 +98,7 @@ public class PgVectorStore implements VectorStore {
 
     @Override
     public List<VectorChunk> search(String pack, float[] queryEmbedding, int k) {
+        attachExistingSchema();
         if (!initialized) {
             return List.of();
         }

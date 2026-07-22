@@ -8,6 +8,13 @@ public class KnowledgeProperties {
     private boolean enabled = false;
     private String embedModel = "nomic-embed";
     private int topK = 5;
+    /**
+     * Minimum cosine similarity (1 - distance) a retrieved chunk must clear to be injected.
+     * Self-gates augmentation: an off-topic query (e.g. a JSON-validation call) whose best chunk
+     * scores below this gets no context injected, so a default knowledge pack can be applied to all
+     * traffic without polluting non-research calls. 0 disables gating.
+     */
+    private double minScore = 0.35;
     /** Token budget reserved for injected context (rough: 4 chars/token). */
     private int contextTokenBudget = 2000;
     /** Chunk size in characters for the indexer. */
@@ -36,6 +43,14 @@ public class KnowledgeProperties {
 
     public void setTopK(int topK) {
         this.topK = topK;
+    }
+
+    public double getMinScore() {
+        return minScore;
+    }
+
+    public void setMinScore(double minScore) {
+        this.minScore = minScore;
     }
 
     public int getContextTokenBudget() {

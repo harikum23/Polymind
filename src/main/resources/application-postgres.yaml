@@ -13,3 +13,10 @@ spring:
 polymind:
   knowledge:
     enabled: true
+    # Relevance gate: chunks below this cosine similarity are not injected, so a default
+    # knowledge pack can be applied to all traffic without polluting off-topic calls.
+    min-score: ${POLYMIND_KNOWLEDGE_MIN_SCORE:0.35}
+  gateway-compat:
+    # When set, every /v1/generate and /v1/agent call (the endpoints TradeEngine speaks) is
+    # augmented from this pack automatically — no client change. Blank = off.
+    knowledge-pack: ${POLYMIND_COMPAT_KNOWLEDGE_PACK:trade-engine}

@@ -29,6 +29,11 @@ public class KnowledgeRetriever {
                 .embed(new EmbeddingRequest(props.getEmbedModel(), List.of(query)))
                 .vectors()
                 .get(0);
-        return store.search(pack, queryEmbedding, props.getTopK());
+        double minScore = props.getMinScore();
+        return store.search(pack, queryEmbedding, props.getTopK()).stream()
+                // Relevance gate (§5): drop weakly-matching chunks so augmentation only fires when
+                // the pack is actually pertinent to the query.
+                .filter(chunk -> chunk.score() >= minScore)
+                .toList();
     }
 }

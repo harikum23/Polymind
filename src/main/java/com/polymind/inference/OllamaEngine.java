@@ -18,8 +18,11 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -33,9 +36,17 @@ public class OllamaEngine implements Engine {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaEngine.class);
 
+    private static final long TAGS_CACHE_TTL_MS = 30_000;
+
     private final OllamaProperties props;
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http;
+    // Cached snapshot of /api/tags model names; refreshed at most once per TTL so routing's
+    // availability filter doesn't hit Ollama on every request.
+    private final AtomicReference<CachedTags> tagsCache = new AtomicReference<>(null);
+
+    private record CachedTags(Set<String> names, long fetchedAtMs) {
+    }
 
     public OllamaEngine(OllamaProperties props) {
         this.props = props;
@@ -160,6 +171,45 @@ public class OllamaEngine implements Engine {
             log.debug("Ollama health check failed: {}", e.getMessage());
             return false;
         }
+    }
+
+    @Override
+    public Set<String> availableModels() {
+        CachedTags cached = tagsCache.get();
+        long now = System.nanoTime() / 1_000_000L;
+        if (cached != null && (now - cached.fetchedAtMs()) < TAGS_CACHE_TTL_MS) {
+            return cached.names();
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(props.getBaseUrl() + "/api/tags"))
+                    .timeout(Duration.ofMillis(props.getRequestTimeoutMs()))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() / 100 != 2) {
+                return staleOrEmpty(cached);
+            }
+            JsonNode models = mapper.readTree(resp.body()).path("models");
+            Set<String> names = new LinkedHashSet<>();
+            if (models.isArray()) {
+                for (JsonNode m : models) {
+                    String name = m.path("name").asText("");
+                    if (!name.isBlank()) {
+                        names.add(name);
+                    }
+                }
+            }
+            tagsCache.set(new CachedTags(Set.copyOf(names), now));
+            return names;
+        } catch (Exception e) {
+            log.debug("Ollama /api/tags query failed: {}", e.getMessage());
+            // Return the last good snapshot if we have one; otherwise empty = "unknown, don't filter".
+            return staleOrEmpty(cached);
+        }
+    }
+
+    private Set<String> staleOrEmpty(CachedTags cached) {
+        return cached != null ? cached.names() : Set.of();
     }
 
     // ---- helpers ----
