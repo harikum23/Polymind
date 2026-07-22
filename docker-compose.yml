@@ -23,6 +23,9 @@ services:
       # Knowledge layer (pgvector) — enabled:
       SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_URL: jdbc:postgresql://postgres:5432/polymind
+      # Relevance gate: 0.35 let off-topic calls (e.g. JSON-only prompts) pull ~900 tokens of
+      # digest context; 0.55 verified 2026-07-22 to block those while keeping research calls augmented.
+      POLYMIND_KNOWLEDGE_MIN_SCORE: ${POLYMIND_KNOWLEDGE_MIN_SCORE:-0.55}
     ports:
       - "9090:9090"
     extra_hosts:
